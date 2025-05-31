@@ -39,6 +39,7 @@ C++17 includes the following new library features:
 - [gcd and lcm](#gcd-and-lcm)
 - [std::not_fn](#stdnot_fn)
 - [string conversion to/from numbers](#string-conversion-tofrom-numbers)
+- [rounding functions for chrono durations and timepoints](#rounding-functions-for-chrono-durations-and-timepoints)
 
 ## C++17 Language Features
 
@@ -369,7 +370,7 @@ std::vector v{ 1, 2, 3 }; // deduces std::vector<int>
 std::mutex mtx;
 auto lck = std::lock_guard{ mtx }; // deduces to std::lock_guard<std::mutex>
 
-auto p = new std::pair{ 1.0, 2.0 }; // deduces to std::pair<double, double>
+auto p = new std::pair{ 1.0, 2.0 }; // deduces to std::pair<double, double>*
 ```
 
 For user-defined types, *deduction guides* can be used to guide the compiler how to deduce template arguments if applicable:
@@ -383,7 +384,7 @@ struct container {
 };
 
 // deduction guide
-template <template Iter>
+template <typename Iter>
 container(Iter b, Iter e) -> container<typename std::iterator_traits<Iter>::value_type>;
 
 container a{ 7 }; // OK: deduces container<int>
@@ -686,9 +687,20 @@ if (ec == std::errc{}) { std::cout << n << std::endl; } // 123
 else { /* handle failure */ }
 ```
 
+### Rounding functions for chrono durations and timepoints
+Provides abs, round, ceil, and floor helper functions for `std::chrono::duration` and `std::chrono::time_point`.
+```c++
+using seconds = std::chrono::seconds;
+std::chrono::milliseconds d{ 5500 };
+std::chrono::abs(d); // == 5s
+std::chrono::round<seconds>(d); // == 6s
+std::chrono::ceil<seconds>(d); // == 6s
+std::chrono::floor<seconds>(d); // == 5s
+```
+
 ## Acknowledgements
 * [cppreference](http://en.cppreference.com/w/cpp) - especially useful for finding examples and documentation of new library features.
-* [C++ Rvalue References Explained](http://thbecker.net/articles/rvalue_references/section_01.html) - a great introduction I used to understand rvalue references, perfect forwarding, and move semantics.
+* [C++ Rvalue References Explained](http://web.archive.org/web/20240324121501/http://thbecker.net/articles/rvalue_references/section_01.html) - a great introduction I used to understand rvalue references, perfect forwarding, and move semantics.
 * [clang](http://clang.llvm.org/cxx_status.html) and [gcc](https://gcc.gnu.org/projects/cxx-status.html)'s standards support pages. Also included here are the proposals for language/library features that I used to help find a description of, what it's meant to fix, and some examples.
 * [Compiler explorer](https://godbolt.org/)
 * [Scott Meyers' Effective Modern C++](https://www.amazon.com/Effective-Modern-Specific-Ways-Improve/dp/1491903996) - highly recommended book!

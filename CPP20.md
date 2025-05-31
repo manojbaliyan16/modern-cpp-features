@@ -6,6 +6,7 @@ Many of these descriptions and examples are taken from various resources (see [A
 C++20 includes the following new language features:
 - [coroutines](#coroutines)
 - [concepts](#concepts)
+- [three-way comparison](#three-way-comparison)
 - [designated initializers](#designated-initializers)
 - [template syntax for lambdas](#template-syntax-for-lambdas)
 - [range-based for loop with initializer](#range-based-for-loop-with-initializer)
@@ -19,9 +20,11 @@ C++20 includes the following new language features:
 - [lambda capture of parameter pack](#lambda-capture-of-parameter-pack)
 - [char8_t](#char8_t)
 - [constinit](#constinit)
+- [\_\_VA\_OPT\_\_](#__VA_OPT__)
 
 C++20 includes the following new library features:
 - [concepts library](#concepts-library)
+- [formatting library](#formatting-library)
 - [synchronized buffered outputstream](#synchronized-buffered-outputstream)
 - [std::span](#stdspan)
 - [bit operations](#bit-operations)
@@ -33,10 +36,17 @@ C++20 includes the following new library features:
 - [std::bit_cast](#stdbit_cast)
 - [std::midpoint](#stdmidpoint)
 - [std::to_array](#stdto_array)
+- [std::bind_front](#stdbind_front)
+- [uniform container erasure](#uniform-container-erasure)
+- [three-way comparison helpers](#three-way-comparison-helpers)
+- [std::lexicographical_compare_three_way](#stdlexicographical_compare_three_way)
 
 ## C++20 Language Features
 
 ### Coroutines
+
+> **Note:** While these examples illustrate how to use coroutines at a basic level, there is lots more going on when the code is compiled. These examples are not meant to be complete coverage of C++20's coroutines. Since the `generator` and `task` classes are not provided by the standard library yet, I used the cppcoro library to compile these examples.
+
 _Coroutines_ are special functions that can have their execution suspended and resumed. To define a coroutine, the `co_return`, `co_await`, or `co_yield` keywords must be present in the function's body. C++20's coroutines are stackless; unless optimized out by the compiler, their state is allocated on the heap.
 
 An example of a coroutine is a _generator_ function, which yields (i.e. generates) a value at each invocation:
@@ -81,8 +91,6 @@ auto meaning_of_life = calculate_meaning_of_life();
 // ...
 co_await meaning_of_life; // == 42
 ```
-
-**Note:** While these examples illustrate how to use coroutines at a basic level, there is lots more going on when the code is compiled. These examples are not meant to be complete coverage of C++20's coroutines. Since the `generator` and `task` classes are not provided by the standard library yet, I used the cppcoro library to compile these examples.
 
 ### Concepts
 _Concepts_ are named compile-time predicates which constrain types. They take the following form:
@@ -236,6 +244,49 @@ concept C = requires(T x) {
 ```
 See also: [concepts library](#concepts-library).
 
+### Three-way comparison
+C++20 introduces the spaceship operator (`<=>`) as a new way to write comparison functions that reduce boilerplate and help developers define clearer comparison semantics. Defining a three-way comparison operator will autogenerate the other comparison operator functions (i.e. `==`, `!=`, `<`, etc.).
+
+Three orderings are introduced:
+* `std::strong_ordering`: The strong ordering distinguishes between items being equal (identical and interchangeable). Provides `less`, `greater`, `equivalent`, and `equal` ordering. Examples of comparisons: searching for a specific value in a list, values of integers, case-sensitive strings.
+* `std::weak_ordering`: The weak ordering distinguishes between items being equivalent (not identical, but can be interchangeable for the purposes of comparison). Provides `less`, `greater`, and `equivalent` ordering. Examples of comparisons: case-insensitive strings, sorting, comparing some but not all visible members of a class.
+* `std::partial_ordering`: The partial ordering follows the same principle of weak ordering but includes the case when an ordering isn't possible. Provides `less`, `greater`, `equivalent`, and `unordered` ordering. Examples of comparisons: floating-point values (e.g. `NaN`).
+
+A defaulted three-way comparison operator does a member-wise comparison:
+```c++
+struct foo {
+  int a;
+  bool b;
+  char c;
+
+  // Compare `a` first, then `b`, then `c` ...
+  friend auto operator<=>(const foo&) const = default;
+};
+
+foo f1{0, false, 'a'}, f2{0, true, 'b'};
+f1 < f2; // == true
+f1 == f2; // == false
+f1 >= f2; // == false
+```
+
+You can also define your own comparisons:
+```c++
+struct foo {
+  int x;
+  bool b;
+  char c;
+
+  friend std::strong_ordering operator<=>(const foo& other) const {
+      return x <=> other.x;
+  }
+};
+
+foo f1{0, false, 'a'}, f2{0, true, 'b'};
+f1 < f2; // == false
+f1 == f2; // == true
+f1 >= f2; // == true
+```
+
 ### Designated initializers
 C-style designated initializer syntax. Any member fields that are not explicitly listed in the designated initializer list are default-initialized.
 ```c++
@@ -320,7 +371,7 @@ struct foo {
   constexpr foo(int) {}
 };
 
-template <foo f>
+template <foo f = {}>
 auto get_foo() {
   return f;
 }
@@ -443,7 +494,15 @@ const char* g() { return "dynamic initialization"; }
 constexpr const char* f(bool p) { return p ? "constant initializer" : g(); }
 
 constinit const char* c = f(true); // OK
-constinit const char* d = f(false); // ERROR: `g` is not constexpr, so `d` cannot be evaluated at compile-time.
+constinit const char* d = g(false); // ERROR: `g` is not constexpr, so `d` cannot be evaluated at compile-time.
+```
+
+### \_\_VA\_OPT\_\_
+Helps support variadic macros by evaluating to the given argument if the variadic macro is non-empty.
+```c++
+#define F(...) f(0 __VA_OPT__(,) __VA_ARGS__)
+F(a, b, c) // replaced by f(0, a, b, c)
+F()        // replaced by f(0)
 ```
 
 ## C++20 Library Features
@@ -474,6 +533,43 @@ Concepts are also provided by the standard library for building more complicated
 - `predicate` - specifies that a callable type is a Boolean predicate.
 
 See also: [concepts](#concepts).
+
+### Formatting library
+Combine the simplicity of `printf` with the type-safety of `iostream`. Uses braces as placeholders, and supports custom formatting similar to printf-style specifiers.
+```c++
+std::format("{1} {0}", "world", "hello"); // == "hello world"
+
+int x = 123;
+std::string str = std::format("x: {}", x); // str == "x: 123"
+
+// Format to an output iterator:
+for (auto x : {1, 2, 3}) {
+  std::format_to(std::ostream_iterator<char>{std::cout, "\n"}, "{}", x);
+}
+```
+
+To format custom types:
+```c++
+struct fraction {
+  int numerator;
+  int denominator;
+};
+
+template <>
+struct std::formatter<fraction>
+{
+    constexpr auto parse(std::format_parse_context& ctx) {
+      return ctx.begin();
+    }
+
+    auto format(const fraction& f, std::format_context& ctx) const {
+      return std::format_to(ctx.out(), "{0:d}/{1:d}", f.numerator, f.denominator);
+    }
+};
+
+fraction f{1, 2};
+std::format("{}", f); // == "1/2"
+```
 
 ### Synchronized buffered outputstream
 Buffers output operations for the wrapped output stream ensuring synchronization (i.e. no interleaving of output).
@@ -601,9 +697,54 @@ int a[] = {1, 2, 3};
 std::to_array(a); // returns `std::array<int, 3>`
 ```
 
+### std::bind_front
+Binds the first N arguments (where N is the number of arguments after the given function to `std::bind_front`) to a given free function, lambda, or member function.
+```c++
+const auto f = [](int a, int b, int c) { return a + b + c; };
+const auto g = std::bind_front(f, 1, 1);
+g(1); // == 3
+```
+
+### Uniform container erasure
+Provides `std::erase` and/or `std::erase_if` for a variety of STL containers such as string, list, vector, map, etc.
+
+For erasing by value use `std::erase`, or to specify a predicate when to erase elements use `std::erase_if`. Both functions return the number of erased elements.
+
+```c++
+std::vector v{0, 1, 0, 2, 0, 3};
+std::erase(v, 0); // v == {1, 2, 3}
+std::erase_if(v, [](int n) { return n == 0; }); // v == {1, 2, 3}
+```
+
+### Three-way comparison helpers
+Helper functions for giving names to comparison results:
+```c++
+std::is_eq(0 <=> 0); // == true
+std::is_lteq(0 <=> 1); // == true
+std::is_gt(0 <=> 1); // == false
+```
+
+See also: [three-way comparison](#three-way-comparison).
+
+### std::lexicographical_compare_three_way
+Lexicographically compares two ranges using three-way comparison and produces a result of the strongest applicable comparison category type.
+```c++
+std::vector a{0, 0, 0}, b{0, 0, 0}, c{1, 1, 1};
+
+auto cmp_ab = std::lexicographical_compare_three_way(
+    a.begin(), a.end(), b.begin(), b.end());
+std::is_eq(cmp_ab); // == true
+
+auto cmp_ac = std::lexicographical_compare_three_way(
+    a.begin(), a.end(), c.begin(), c.end());
+std::is_lt(cmp_ac); // == true
+```
+
+See also: [three-way comparison](#three-way-comparison), [three-way comparison helpers](#three-way-comparison-helpers).
+
 ## Acknowledgements
 * [cppreference](http://en.cppreference.com/w/cpp) - especially useful for finding examples and documentation of new library features.
-* [C++ Rvalue References Explained](http://thbecker.net/articles/rvalue_references/section_01.html) - a great introduction I used to understand rvalue references, perfect forwarding, and move semantics.
+* [C++ Rvalue References Explained](http://web.archive.org/web/20240324121501/http://thbecker.net/articles/rvalue_references/section_01.html) - a great introduction I used to understand rvalue references, perfect forwarding, and move semantics.
 * [clang](http://clang.llvm.org/cxx_status.html) and [gcc](https://gcc.gnu.org/projects/cxx-status.html)'s standards support pages. Also included here are the proposals for language/library features that I used to help find a description of, what it's meant to fix, and some examples.
 * [Compiler explorer](https://godbolt.org/)
 * [Scott Meyers' Effective Modern C++](https://www.amazon.com/Effective-Modern-Specific-Ways-Improve/dp/1491903996) - highly recommended book!
